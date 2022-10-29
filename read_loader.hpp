@@ -1,7 +1,7 @@
 #define DEBUG
 
-#ifndef _READS_LOADER_HPP_
-#define _READS_LOADER_HPP_
+#ifndef _READ_LOADER_HPP
+#define _READ_LOADER_HPP
 
 #include <iostream>
 #include <string>
@@ -101,7 +101,7 @@ private:
         // ---- Process _buf_cur ----
         lock_guard<mutex> lg(_thread_reads_mtx[tid]);
         if (buf[0] != '@') { // TODO: 不用判断.
-            cerr << tid << " Error: wrong file format (not fastq). " << buf[0] << endl;
+            cerr << tid << " Error: wrong file format (not fastq). " << tid << string(buf.begin(), buf.begin()+10) << endl;
             exit(1);
         }
         size_t i = 0, j;

@@ -14,7 +14,7 @@ typedef int T_read_len;
 typedef int T_read_cnt;
 // typedef size_t T_CSR_cap;
 typedef unsigned int T_minimizer; // support minimizer with max length = 16
-const T_minimizer T_MM_MAX = 0xffffffffffffffff;
+const T_minimizer T_MM_MAX = (T_minimizer)(0xffffffffffffffff);
 typedef unsigned char T_kvalue;
 
 struct ReadPtr {

@@ -1,7 +1,7 @@
 #define _in_
 #define _out_
 
-#define FILTER_KERNEL mm_filter // modify this to change filter: mm_filter, sign_filter, new_filter
+#define FILTER_KERNEL new_filter2 // modify this to change filter: mm_filter, sign_filter, new_filter, new_filter2
 #define STR1(R)  #R
 #define STR(R) STR1(R)
 
@@ -119,7 +119,7 @@ extern Logger *logger;
         for (const ReadPtr &read_ptr: reads) {
             size_capacity += read_ptr.len;
         } // about cudaHostAlloc https://zhuanlan.zhihu.com/p/188246455
-        cerr<<"read sizes = "<<size_capacity<<" bytes"<<endl;
+        cerr<<"Pinned reads = "<<n_reads<<" tot_sizes = "<<size_capacity<<"bytes"<<endl;
         CUDA_CHECK(cudaHostAlloc((void**)(&reads_offs), (this->n_reads+1)*sizeof(T_CSR_cap), cudaHostAllocDefault));
         CUDA_CHECK(cudaHostAlloc((void**)(&reads_CSR), size_capacity+1, cudaHostAllocDefault));
         char *cur_ptr = reads_CSR;
@@ -222,6 +222,9 @@ __device__ __forceinline__ bool mm_filter(T_minimizer mm, int p) {
 // new design: 2nd/3rd不都为a
 __device__ __forceinline__ bool new_filter(T_minimizer mm, int p) {
     return ((mm >> (p-2)*2) & 0b11) + ((mm >> (p-3)*2) & 0b11);
+}
+__device__ __forceinline__ bool new_filter2(T_minimizer mm, int p) {
+    return ((mm >> ((p-3)*2)) != 0) /*AAA*/ & (mm >> ((p-3)*2) != 0b000100) /*ACA*/ & (mm >> ((p-3)*2) != 0b001000);
 }
 // KMC2 signature
 __device__ bool sign_filter(T_minimizer mm, int p) {
@@ -377,6 +380,7 @@ __host__ void GPUReset(int did) {
     // do not call it after host malloc
     CUDA_CHECK(cudaSetDevice(did));
     CUDA_CHECK(cudaDeviceReset());
+    CUDA_CHECK(cudaDeviceSynchronize());
     return;
 }
 
@@ -388,12 +392,13 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
     int time_all=0, time_filter=0;
 
     CUDA_CHECK(cudaSetDevice(gpars.device_id));
+    CUDA_CHECK(cudaDeviceSynchronize());
     
     cudaStream_t streams[gpars.n_streams];
     T_d_data gpu_data[gpars.n_streams];
     T_h_data host_data[gpars.n_streams];
     T_CSR_cap batch_size[gpars.n_streams];
-    T_read_cnt bat_beg_read[gpars.n_streams], bat_end_read[gpars.n_streams];
+    T_read_cnt bat_beg_read[gpars.n_streams];//, bat_end_read[gpars.n_streams];
 
     int i, started_streams;
     for (i=0; i<gpars.n_streams; i++)
@@ -408,7 +413,8 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
 
         for (i = 0; i < gpars.n_streams && cur_read < pinned_reads.n_reads; i++, cur_read += items_per_stream) {
             bat_beg_read[i] = cur_read;
-            bat_end_read[i] = end_read = min(cur_read + items_per_stream, pinned_reads.n_reads); // the last read in this stream batch
+            end_read = min(cur_read + items_per_stream, pinned_reads.n_reads); // the last read in this stream batch
+            // bat_end_read[i] = end_read;
             host_data[i].reads_cnt = gpu_data[i].reads_cnt = end_read-cur_read;
             batch_size[i] = pinned_reads.reads_offs[end_read] - pinned_reads.reads_offs[cur_read]; // read size in bytes
             // gpu_data[i].offs_move = pinned_reads.reads_offs[cur_read];
@@ -516,6 +522,6 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             // logger->log("Batch Done "+to_string(i));
         }
     }
-    logger->log("FILTER KERNEL: "STR(FILTER_KERNEL)"");
+    logger->log("FILTER KERNEL: " STR(FILTER_KERNEL) "");
     logger->log("Kernel Functions Time: ALL = "+to_string(time_all)+"ms FILTER = "+to_string(time_filter)+"ms");
 }

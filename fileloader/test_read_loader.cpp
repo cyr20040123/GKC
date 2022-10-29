@@ -16,7 +16,7 @@
 // #include <sys/mman.h>   // mmap
 // #include <fcntl.h>      // open for mmap (unix only)
 #include <cstdio>
-#include "../reads_loader.hpp"
+#include "../read_loader.hpp"
 using namespace std;
 
 // ================ CLASS WallClockTimer ================
@@ -67,8 +67,8 @@ void mm_loader(string filename, int n_threads = 4) {
 int main(int argc, const char **argvs) {
     // string FILENAME = "/home/cyr/downloads/pacbio_filtered.fastq";
     // string FILENAME = "/mnt/f/study/bio_dataset/hg002pacbio/man_files/SRR8858432.man.fasta";
-    string FILENAME = "/mnt/f/study/testing_data/SRR8858432.fastq";
-    // string FILENAME = "/mnt/f/study/testing_data/Ecoli/pacbio_filtered.fastq";
+    // string FILENAME = "/mnt/f/study/testing_data/SRR8858432.fastq";
+    string FILENAME = "/mnt/f/study/bio_dataset/Ecoli/pacbio_filtered.fastq";
     // fs_loader(FILENAME);
     // system("sudo sh -c \"free && sync && echo 3 > /proc/sys/vm/drop_caches && free\"");
     mm_loader(FILENAME, atoi(argvs[1]));

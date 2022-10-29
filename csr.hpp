@@ -173,6 +173,7 @@ public:
 };
 
 
+/*
 
 // ================ CLASS ReadLoader ================
 class ReadLoader {
@@ -205,7 +206,7 @@ char* ReadLoader::_getline(FILE* fp, char *buffer, int buffer_size, _out_ string
     return res_flag;
 }
 
-void ReadLoader::LoadReadsToVector(const char* filename, _out_ vector<string> &reads, int k/* = 1*/) {
+void ReadLoader::LoadReadsToVector(const char* filename, _out_ vector<string> &reads, int k) {//k=1
     FILE *fp = fopen(filename, "r");
     if (fp == NULL) {
         cerr << "Error when open " << filename << "." << endl;
@@ -220,7 +221,7 @@ void ReadLoader::LoadReadsToVector(const char* filename, _out_ vector<string> &r
     return;
 }
 
-void ReadLoader::LoadReadsToCSR(const char* filename, _out_ CSR<char> &reads, int k/* = 1*/) {
+void ReadLoader::LoadReadsToCSR(const char* filename, _out_ CSR<char> &reads, int k) {//k=1
     FILE *fp = fopen(filename, "r");
     if (fp == NULL) {
         cerr << "Error when open " << filename << "." << endl;
@@ -241,5 +242,6 @@ void ReadLoader::Vector2CSR(vector<string> &reads, CSR<char> &csr) {
     }
 }
 
+*/
 
 #endif
