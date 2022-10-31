@@ -119,7 +119,7 @@ extern Logger *logger;
         for (const ReadPtr &read_ptr: reads) {
             size_capacity += read_ptr.len;
         } // about cudaHostAlloc https://zhuanlan.zhihu.com/p/188246455
-        cerr<<"Pinned reads = "<<n_reads<<" tot_sizes = "<<size_capacity<<"bytes"<<endl;
+        // cerr<<"Pinned reads = "<<n_reads<<" \ttot_sizes = "<<size_capacity<<" bytes"<<endl;
         CUDA_CHECK(cudaHostAlloc((void**)(&reads_offs), (this->n_reads+1)*sizeof(T_CSR_cap), cudaHostAllocDefault));
         CUDA_CHECK(cudaHostAlloc((void**)(&reads_CSR), size_capacity+1, cudaHostAllocDefault));
         char *cur_ptr = reads_CSR;
@@ -522,6 +522,6 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             // logger->log("Batch Done "+to_string(i));
         }
     }
-    logger->log("FILTER KERNEL: " STR(FILTER_KERNEL) "");
-    logger->log("Kernel Functions Time: ALL = "+to_string(time_all)+"ms FILTER = "+to_string(time_filter)+"ms");
+    // logger->log("FILTER KERNEL: " STR(FILTER_KERNEL) "");
+    logger->log("FILTER: " STR(FILTER_KERNEL) " Kernel Functions Time: ALL = "+to_string(time_all)+"ms FILTER = "+to_string(time_filter)+"ms");
 }
