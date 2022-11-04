@@ -103,8 +103,9 @@ public:
 // ================ CLASS GlobalParams ================
 static class GlobalParams {
 public:
-    unsigned int K_kmer = 21;   // length of kmer
-    unsigned int P_minimizer = 7, SKM_partitions = 128; // minimizer length and superkmer partitions
+    T_kvalue K_kmer = 21;   // length of kmer
+    T_kvalue P_minimizer = 7;
+    int SKM_partitions = 31; // minimizer length and superkmer partitions
     unsigned short kmer_min_freq = 1, kmer_max_freq = 1000; // count kmer cnt in [min,max] included
     bool HPC = false;           // homopolymer compression assembly
     bool CPU_only = false;
@@ -118,4 +119,8 @@ public:
     void ArgParser(int argc, char* argvs[]);
 } PAR;
 
+// ================ Read Sorting ================
+static bool sort_comp (const ReadPtr x, const ReadPtr y) {
+    return x.len < y.len;
+}
 #endif

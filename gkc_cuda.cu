@@ -1,6 +1,8 @@
 #define _in_
 #define _out_
 
+// #define KERNEL_TIME_MEASUREMENT
+
 #define FILTER_KERNEL new_filter2 // modify this to change filter: mm_filter, sign_filter, new_filter, new_filter2
 #define STR1(R)  #R
 #define STR(R) STR1(R)
@@ -13,6 +15,9 @@
 
 #include <vector>
 #include <string>
+#include <thread>
+#include <future>
+#include <functional>
 #include <iostream>
 
 using namespace std;
@@ -155,23 +160,6 @@ struct T_d_data {
     _out_ char *d_mm_strand;            // len == len(d_reads)      char    0 for forward, 1 for reverse complement, -1 for f==rc
     _out_ T_read_len *d_superkmer_offs; // len == len(d_reads)      int     supermer_offs **in a read**
 }; // device data
-
-struct T_h_data {
-    _in_ T_read_cnt reads_cnt;
-    
-    // Raw reads
-    _in_ _out_ char *reads;  // will be also used to store HPC reads (if HPC is enabled)
-    _in_ T_CSR_cap *reads_offs;         // reads are in CSR format so offset array is required
-    _in_ _out_ T_read_len *read_len;    // len == len(d_read_offs) int
-    
-    // HPC reads info
-    T_read_len *hpc_orig_pos;  // len == len(d_reads)      size_t  base original pos **in a read** (not in CSR)
-    
-    // Minimizers
-    _out_ T_minimizer *minimizers;      // len == len(d_reads)      size_t
-    _out_ T_read_len *superkmer_offs;   // len == len(d_reads)      int     supermer_offs **in a read**
-}; // host data
-
 
 __global__ void GPU_HPCEncoding (
     _in_ T_read_cnt d_reads_cnt, _out_ T_read_len *d_read_len, 
@@ -352,14 +340,14 @@ __global__ void MoveOffset(_in_ T_read_cnt d_reads_cnt, _in_ _out_ T_CSR_cap *d_
 
 
 // post-GPU task functions
-__host__ void SaveSKMs (CountTask task) {
+__host__ void SaveSKMs_instream (CountTask task) {
     if (task == CountTask::SKMPartition) {
 
     } else if (task == CountTask::SKMPartWithPos) {
 
     }
 }
-__host__ void CalcSKMPartSize (T_read_cnt reads_cnt, T_read_len *superkmer_offs, 
+__host__ void CalcSKMPartSize_instream (T_read_cnt reads_cnt, T_read_len *superkmer_offs, 
     T_CSR_cap *reads_offs, T_minimizer *minimizers, 
     int n_partitions, int k, atomic<size_t> part_sizes[]) {
     int i;
@@ -387,7 +375,8 @@ __host__ void GPUReset(int did) {
 // provide pinned_reads from the shortest to the longest read
 __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     int K_kmer, int P_minimizer, bool HPC, CUDAParams gpars, CountTask task,
-    int SKM_partitions, atomic<size_t> skm_part_sizes[]) {
+    int SKM_partitions, std::function<void(T_h_data)> process_func
+    /*atomic<size_t> skm_part_sizes[]*/) {
     
     int time_all=0, time_filter=0;
 
@@ -418,7 +407,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             host_data[i].reads_cnt = gpu_data[i].reads_cnt = end_read-cur_read;
             batch_size[i] = pinned_reads.reads_offs[end_read] - pinned_reads.reads_offs[cur_read]; // read size in bytes
             // gpu_data[i].offs_move = pinned_reads.reads_offs[cur_read];
-            logger->log("STREAM "+to_string(i)+" Batch read count="+to_string(gpu_data[i].reads_cnt));
+            logger->log("GPU stream "+to_string(i)+":\tread count = "+to_string(gpu_data[i].reads_cnt));
 
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             // 1. cudaMalloc (5000 reads / GB)
@@ -438,20 +427,26 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaMemcpyAsync(gpu_data[i].d_read_offs, &(pinned_reads.reads_offs[cur_read]), sizeof(T_CSR_cap) * (gpu_data[i].reads_cnt+1), cudaMemcpyHostToDevice, streams[i]));
             
             // 3. GPU Computing
+            #ifdef KERNEL_TIME_MEASUREMENT
             WallClockTimer wct;
+            #endif
             MoveOffset<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_offs, 0
             );
+            #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
+            #endif
             
             GPU_HPCEncoding<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len, 
                 gpu_data[i].d_reads, gpu_data[i].d_read_offs, 
                 HPC, gpu_data[i].d_hpc_orig_pos
             );
+            #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
-
+            
             WallClockTimer wct2;
+            #endif
             // cudaEventRecord(start, streams[i]);
             GPU_GenMinimizer<<<gpars.NUM_BLOCKS_PER_GRID, gpars.NUM_THREADS_PER_BLOCK, 0, streams[i]>>>(
                 gpu_data[i].reads_cnt, gpu_data[i].d_read_len,
@@ -459,8 +454,10 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_minimizers, 
                 K_kmer, P_minimizer
             );
+            #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             time_filter += wct2.stop(true);
+            #endif
             // cudaEventRecord(stop, streams[i]);
             // cudaEventElapsedTime(&time_tmp, start, stop); time_all += time_tmp; time_filter += time_tmp;
 
@@ -471,13 +468,15 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
                 gpu_data[i].d_superkmer_offs,
                 K_kmer, P_minimizer
             );
+            #ifdef KERNEL_TIME_MEASUREMENT
             CUDA_CHECK(cudaStreamSynchronize(streams[i]));
             time_all += wct.stop(true);
+            #endif
             // pinned_reads.reads_offs[cur_read]
         }
         started_streams = i;
         for (i = 0; i < started_streams; i++) {
-            // Malloc on host for temporary result storage
+            // -- Malloc on host for temporary result storage --
             // TODO: add if on task to indicate whether to new and D2H
             if (HPC) {
                 host_data[i].hpc_orig_pos = new T_read_len[batch_size[i]];
@@ -485,10 +484,10 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             }
             host_data[i].minimizers = new T_minimizer[batch_size[i]];
             host_data[i].reads = &(pinned_reads.reads_CSR[pinned_reads.reads_offs[bat_beg_read[i]]]); // used pinned memory to store the output
-            host_data[i].reads_offs = &(pinned_reads.reads_offs[bat_beg_read[i]]); // used pinned memory to store the output, !! offs not begin from 0
+            host_data[i].reads_offs = &(pinned_reads.reads_offs[bat_beg_read[i]]); // !!! offs not begin from 0. used pinned memory to store the output
             host_data[i].superkmer_offs = new T_read_len[batch_size[i]];
 
-            // D2H memory copy
+            // -- D2H memory copy --
             if (HPC) {
                 CUDA_CHECK(cudaMemcpyAsync(host_data[i].hpc_orig_pos, gpu_data[i].d_hpc_orig_pos, sizeof(T_read_len) * batch_size[i], cudaMemcpyDeviceToHost, streams[i]));
                 CUDA_CHECK(cudaMemcpyAsync(host_data[i].read_len, gpu_data[i].d_read_len, sizeof(T_read_len) * host_data[i].reads_cnt, cudaMemcpyDeviceToHost, streams[i]));
@@ -497,7 +496,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].reads, gpu_data[i].d_reads, sizeof(char) * batch_size[i], cudaMemcpyDeviceToHost, streams[i]));
             CUDA_CHECK(cudaMemcpyAsync(host_data[i].superkmer_offs, gpu_data[i].d_superkmer_offs, sizeof(T_read_len) * batch_size[i], cudaMemcpyDeviceToHost, streams[i]));
 
-            // Free device memory
+            // -- Free device memory --
             if (HPC) CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_hpc_orig_pos, streams[i]));
             CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_minimizers, streams[i]));
             CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_read_len, streams[i]));
@@ -505,13 +504,17 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_read_offs, streams[i]));
             CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_superkmer_offs, streams[i]));
             
-            // Wait for CUDA
+            // -- Wait for CUDA --
             CUDA_CHECK(cudaStreamSynchronize(streams[i])); // move this into async post_proc_func
-            logger->log("GPU Done"+to_string(i));
-            // CPU post-process // TODO: async & use bind to pass the post process function
-            CalcSKMPartSize(host_data[i].reads_cnt, host_data[i].superkmer_offs, host_data[i].reads_offs, host_data[i].minimizers, SKM_partitions, K_kmer, skm_part_sizes);
+            // logger->log("GPU Done"+to_string(i));
             
-            // clean host variables
+            // -- CPU post-process -- // TODO: async & use bind to pass the post process function
+
+            // future<void> file_loading_res = async(std::launch::async, process_func);
+            process_func(host_data[i]);
+            // CalcSKMPartSize_instream(host_data[i].reads_cnt, host_data[i].superkmer_offs, host_data[i].reads_offs, host_data[i].minimizers, SKM_partitions, K_kmer, skm_part_sizes);
+            
+            // -- clean host variables --
             // (TODO: 如果post-process 用 async, 则free放在post-process函数里，且保证host_data非引用传递给async proc func以防下一轮更新)
             if (HPC) {
                 delete [] host_data[i].hpc_orig_pos;
@@ -519,9 +522,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             }
             delete [] host_data[i].minimizers;
             delete [] host_data[i].superkmer_offs;
-            // logger->log("Batch Done "+to_string(i));
         }
     }
-    // logger->log("FILTER KERNEL: " STR(FILTER_KERNEL) "");
     logger->log("FILTER: " STR(FILTER_KERNEL) " Kernel Functions Time: ALL = "+to_string(time_all)+"ms FILTER = "+to_string(time_filter)+"ms");
 }

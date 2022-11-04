@@ -19,6 +19,7 @@ while((call) != cudaSuccess) { \
 #include <vector>
 #include <thread>
 #include <atomic>
+#include <functional>
 using namespace std;
 
 struct CUDAParams {
@@ -48,10 +49,15 @@ public:
 // host/global functions
 enum CountTask {SKMPartition, SKMPartWithPos, StoreMinimizerPos}; // 正常kmc, wtdbg2的kmc, minimap2的minimizer查找
 
+void CalcSKMPartSize_instream (T_read_cnt reads_cnt, T_read_len *superkmer_offs, 
+    T_CSR_cap *reads_offs, T_minimizer *minimizers, 
+    int n_partitions, int k, atomic<size_t> part_sizes[]);
+
 void GPUReset (int did);
 
 void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     int K_kmer, int P_minimizer, bool HPC, CUDAParams gpars, CountTask task,
-    int SKM_partitions, atomic<size_t> skm_part_sizes[]);
+    int SKM_partitions, std::function<void(T_h_data)> process_func
+    /*atomic<size_t> skm_part_sizes[]*/);
 
 #endif

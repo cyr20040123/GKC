@@ -24,8 +24,6 @@ atomic<size_t> checksum{0};
 
 class ReadLoader {
 private:
-    const size_t KB = 1024;
-    const size_t MB = 1048576;
     size_t CUR_BUF_SIZE = 32 * MB;      // batch buffer size
     size_t LINE_BUF_SIZE = 4 * MB;      // should be larger than 3 * max_read_len (minimum buffer size)
     string _filename;                   // filename
@@ -204,12 +202,14 @@ private:
     }
 
 public:
-
+    static const size_t KB = 1024;
+    static const size_t MB = 1048576;
+    
     T_read_cnt read_cnt = 0;
     T_read_cnt reads_consumed = 0;
     T_read_cnt batch_size = 8000;
 
-    ReadLoader (int n_threads, string filename, T_read_cnt batch_size = 8000) {
+    ReadLoader (int n_threads, string filename, T_read_cnt batch_size = 8000, size_t buffer_size = 20*MB) {
         size_t file_size = get_file_size(filename.c_str());
         _filename = filename;
         int i;
@@ -228,10 +228,10 @@ public:
         _thread_bat_split_pos = new vector<T_read_cnt> [n_threads];//
 
         // set buf size:
-        if (file_size / n_threads < 16 * MB)
+        if (file_size / n_threads < buffer_size)
             CUR_BUF_SIZE = max (LINE_BUF_SIZE, (file_size + 1*KB) / n_threads);
         else
-            CUR_BUF_SIZE = 16 * MB; // buf_size 过小4MB(bug) 16MB(no bug) on 8858432也会出bug。。。
+            CUR_BUF_SIZE = buffer_size; // buf_size 过小4MB(bug) 16MB(no bug) on 8858432也会出bug。。。
         cerr << "CUR_BUF_SIZE = " << CUR_BUF_SIZE / MB << "MB \t#threads = " << n_threads << endl;
 
         _pbuf_set[0] = true;
@@ -399,7 +399,9 @@ public:
     }
     
 
-    static void work_while_loading (std::function<void(vector<ReadPtr>&)> work_func, int loader_threads, string filename, T_read_cnt batch_size=5000, bool delete_after_proc=false) {
+    static void work_while_loading (std::function<void(vector<ReadPtr>&)> work_func, int loader_threads, string filename, 
+        T_read_cnt batch_size=5000, bool delete_after_proc=false, size_t buffer_size = 20 * ReadLoader::MB)
+    {
         vector<ReadPtr> reads;
         ReadLoader rl(loader_threads, filename, batch_size);
         future<void> file_loading_res = async(std::launch::async, [&rl](){return rl.load_file();});
