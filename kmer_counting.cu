@@ -25,6 +25,18 @@ struct sameasprev {
             return x==y;
         }
 };
+struct canonicalkmer {
+    canonicalkmer() {}
+    __host__ __device__
+        T_kmer operator()(const T_kmer& x, const T_kvalue k) const {
+            T_kmer x1 = ~x, res=0;
+            for (T_kvalue i=0; i<k; i++) {
+                res = (res << 2) | (x1 & 0b11);
+                x1 = x1 >> 2;
+            }
+            return res < x ? res : x;
+        }
+};
 struct replaceidx {
     replaceidx() {}
     __host__ __device__
@@ -47,8 +59,9 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
     // size_t est_kmer = skms_store.tot_size - skms_store.skms.size_approx() * (k-1);
     // size_t db_skm = skms_store.skms.size_approx();
     // size_t est_skm = 0;
-
+    
     // 0. Extract kmers from SKMStore:
+    if (skms_store.tot_size == 0) return 0;
     thrust::host_vector<T_kmer> kmers_h;
     size_t tot_kmers;
     T_skm_len skm_len;
@@ -69,36 +82,40 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
     thrust::device_vector<T_kmer> kmers_d(kmers_h);
     tot_kmers = kmers_d.size();
     // cerr<<est_kmer<<"|"<<db_skm<<"|"<<est_skm<<"|"<<tot_kmers<<endl;
+    
+    // 1. convert to canonical kmers
+    thrust::constant_iterator<T_kvalue> ik(k);
+    thrust::transform(thrust::device, kmers_d.begin(), kmers_d.end(), ik, kmers_d.begin(), canonicalkmer());
 
-    // 1. sort: [ABCBBAC] -> [AABBBCC] (kmers_d)
+    // 2. sort: [ABCBBAC] -> [AABBBCC] (kmers_d)
     thrust::sort(thrust::device, kmers_d.begin(), kmers_d.end()/*, thrust::greater<T_kmer>()*/);
     thrust::host_vector<T_kmer> sorted_kmers_h = kmers_d;
 
-    // 2. find changes: [AABBBCC] -> [0,0,1,0,0,1,0] (comp_vec_d)
+    // 3. find changes: [AABBBCC] -> [0,0,1,0,0,1,0] (comp_vec_d)
     // thrust::device_vector<bool> comp_vec_d(kmers_d.size());
     // thrust::transform(thrust::device, kmers_d.begin()+1 /*x beg*/, kmers_d.end() /*x end*/, kmers_d.begin()/*y beg*/, comp_vec_d.begin()+1/*res beg*/, differentfromprev());
     // comp_vec_d[0] = 1; //
     // int distinct_kmer_cnt = thrust::reduce(thrust::device, comp_vec_d.begin(), comp_vec_d.end()) + 1;
     
-    // 2. find changes: [AABBBCC] -> [0,1,0,1,1,0,1] (same_flag_d)
+    // 3. find changes: [AABBBCC] -> [0,1,0,1,1,0,1] (same_flag_d)
     thrust::device_vector<bool> same_flag_d(kmers_d.size());
     thrust::transform(thrust::device, kmers_d.begin()+1 /*x beg*/, kmers_d.end() /*x end*/, kmers_d.begin()/*y beg*/, same_flag_d.begin()+1/*res beg*/, sameasprev());
     same_flag_d[0] = 0; //
     
-    // 3. remove same idx: [0123456] [0101101] -> [0,2,5] (idx_d)
+    // 4. remove same idx: [0123456] [0101101] -> [0,2,5] (idx_d)
     thrust::device_vector<T_read_len> idx_d(kmers_d.size());
     thrust::sequence(thrust::device, idx_d.begin(), idx_d.end());
     auto new_end_d = thrust::remove_if(thrust::device, idx_d.begin(), idx_d.end(), same_flag_d.begin(), thrust::identity<bool>()); // new_end_d is an iterator
 
-    // 3. replace with index: [0,0,1,0,0,1,0] -> [0,0,2,0,0,5,0] (comp_vec_d)
+    // 4. replace with index: [0,0,1,0,0,1,0] -> [0,0,2,0,0,5,0] (comp_vec_d)
     // thrust::device_vector<T_read_len> seq_d(kmers_d.size());
     // thrust::sequence(thrust::device, seq_d.begin(), seq_d.end());
     // thrust::transform(thrust::device, comp_vec_d.begin() /*x*/, comp_vec_d.end(), seq_d.begin()/*y*/, comp_vec_d.begin()/*res*/, replaceidx());
 
-    // // 4. skip repeats: [0,0,2,0,0,5,0] -> [0,2,5] (comp_vec_d)
+    // // 5. skip repeats: [0,0,2,0,0,5,0] -> [0,2,5] (comp_vec_d)
     // auto new_end_d = thrust::remove_if(thrust::device, comp_vec_d.begin(), comp_vec_d.end(), is_zero());
 
-    // 4. copy device_vector back to host_vector
+    // 5. copy device_vector back to host_vector
     thrust::host_vector<T_read_len> idx_h(idx_d.begin(), new_end_d);
     idx_h.push_back(tot_kmers); // [0,2,5] -> [0,2,5,7] A2 B3 C2
     
@@ -113,7 +130,7 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
         //     kmc_result_curthread.push_back({sorted_kmers_h[idx_h[i]], cnt});
         // }
     }
-    return total_kmer_cnt; // total kmer
+    // return total_kmer_cnt; // total kmer
     return idx_h.size()-1; // total distinct kmer
 }
 

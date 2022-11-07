@@ -375,7 +375,7 @@ __host__ void GPUReset(int did) {
 // provide pinned_reads from the shortest to the longest read
 __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads, 
     int K_kmer, int P_minimizer, bool HPC, CUDAParams gpars, CountTask task,
-    int SKM_partitions, std::function<void(T_h_data)> process_func
+    int SKM_partitions, std::function<void(T_h_data)> process_func /*must be thread-safe*/
     /*atomic<size_t> skm_part_sizes[]*/) {
     
     int time_all=0, time_filter=0;
@@ -475,6 +475,7 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             // pinned_reads.reads_offs[cur_read]
         }
         started_streams = i;
+        future<void> fu_stream_postproc[started_streams];
         for (i = 0; i < started_streams; i++) {
             // -- Malloc on host for temporary result storage --
             // TODO: add if on task to indicate whether to new and D2H
@@ -508,14 +509,22 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaStreamSynchronize(streams[i])); // move this into async post_proc_func
             // logger->log("GPU Done"+to_string(i));
             
-            // -- CPU post-process -- // TODO: async & use bind to pass the post process function
-
-            // future<void> file_loading_res = async(std::launch::async, process_func);
-            process_func(host_data[i]);
+            // -- CPU post-process --
+            fu_stream_postproc[i] = async(launch::async, process_func, host_data[i]);
+            // process_func(host_data[i]);
             // CalcSKMPartSize_instream(host_data[i].reads_cnt, host_data[i].superkmer_offs, host_data[i].reads_offs, host_data[i].minimizers, SKM_partitions, K_kmer, skm_part_sizes);
             
             // -- clean host variables --
-            // (TODO: 如果post-process 用 async, 则free放在post-process函数里，且保证host_data非引用传递给async proc func以防下一轮更新)
+            // (TODO: 如果post-process 用 async, 则free放在post-process函数里或get后，且保证host_data非引用传递给async proc func以防下一轮更新)
+            // if (HPC) {
+            //     delete [] host_data[i].hpc_orig_pos;
+            //     delete [] host_data[i].read_len;
+            // }
+            // delete [] host_data[i].minimizers;
+            // delete [] host_data[i].superkmer_offs;
+        }
+        for (i = 0; i < started_streams; i++) {
+            fu_stream_postproc[i].get();
             if (HPC) {
                 delete [] host_data[i].hpc_orig_pos;
                 delete [] host_data[i].read_len;

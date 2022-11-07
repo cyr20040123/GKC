@@ -96,13 +96,13 @@ private:
         } else {
             remain_pos = buf.length();
         }
-
         // ---- Process _buf_cur ----
         lock_guard<mutex> lg(_thread_reads_mtx[tid]);
-        if (buf[0] != '@') { // TODO: 不用判断.
-            cerr << tid << " Error: wrong file format (not fastq). " << tid << string(buf.begin(), buf.begin()+10) << endl;
-            exit(1);
-        }
+        assert(buf[0] == '@'); // TODO: 不用判断.
+        // if (buf[0] != '@') { 
+        //     cerr << tid << " Error: wrong file format (not fastq). " << string(buf.begin(), buf.begin()+20) << endl;
+        //     exit(1);
+        // }
         size_t i = 0, j;
         if (remain_pos != string::npos) {////改动
             while (i < remain_pos) {
@@ -163,10 +163,11 @@ private:
 
         // ---- Process _buf_cur ----
         lock_guard<mutex> lg(_thread_reads_mtx[tid]);
-        if (buf[0] != '>') { // TODO: 不用判断.
-            cerr << tid << " Error: wrong file format (not fasta). " << buf[0] << endl;
-            exit(1);
-        }
+        assert(buf[0] == '>');
+        // if (buf[0] != '>') { // TODO: 不用判断.
+        //     cerr << tid << " Error: wrong file format (not fasta). " << buf[0] << endl;
+        //     exit(1);
+        // }
         size_t i = 0, j;
         if (remain_pos != string::npos) {////改动
             while (i < remain_pos - MIN_READ_LEN) { // - MIN_READ_LEN to avoid unnecessary newline at the end of the file
@@ -232,17 +233,18 @@ public:
             CUR_BUF_SIZE = max (LINE_BUF_SIZE, (file_size + 1*KB) / n_threads);
         else
             CUR_BUF_SIZE = buffer_size; // buf_size 过小4MB(bug) 16MB(no bug) on 8858432也会出bug。。。
-        cerr << "CUR_BUF_SIZE = " << CUR_BUF_SIZE / MB << "MB \t#threads = " << n_threads << endl;
+        cerr << "CUR_BUF_SIZE = " << CUR_BUF_SIZE / MB << "MB \tloading threads = " << n_threads << endl;
 
-        _pbuf_set[0] = true;
         _pbuf_mtxs[0].unlock(); // unlock only when _buf_prev_remain is prepared
         for (i=0; i<n_threads; i++) {
+            _pbuf_set[i] = false;
             _pbuf_locks[i] = unique_lock<mutex>(_pbuf_mtxs[i]);
             _buf_cur[i] = new char [CUR_BUF_SIZE+4];
             _buf_prev_remain[i].resize(LINE_BUF_SIZE);
             _buf_prev_remain[i] = "";
             _thread_bat_split_pos[i].push_back(0);
         }
+        _pbuf_set[0] = true;
     }
     ~ReadLoader () {
         for (int i=0; i<_n_threads; i++) {
@@ -303,7 +305,7 @@ public:
             if (not_1st_loop) {
                 read_cnt += _proc_res[i].get(); // wait for the previous round
                 // cerr<<"LOADED "<<read_cnt<<" CONSUMED "<<reads_consumed<<" BATCH "<<batch_size<<endl;
-                while (read_cnt - reads_consumed > batch_size) this_thread::sleep_for(1ms);
+                while (read_cnt - reads_consumed > 2 * batch_size) this_thread::sleep_for(1ms);
             }
         }
         i_break = i;
@@ -403,7 +405,7 @@ public:
         T_read_cnt batch_size=5000, bool delete_after_proc=false, size_t buffer_size = 20 * ReadLoader::MB)
     {
         vector<ReadPtr> reads;
-        ReadLoader rl(loader_threads, filename, batch_size);
+        ReadLoader rl(loader_threads, filename, batch_size, buffer_size);
         future<void> file_loading_res = async(std::launch::async, [&rl](){return rl.load_file();});
         
         T_read_cnt n_read_loaded = 0, reads_loaded;

@@ -110,11 +110,14 @@ public:
     bool HPC = false;           // homopolymer compression assembly
     bool CPU_only = false;
     int Kmer_filter = 25;       // percentage
-    int N_threads = 8;          // threads per process
+    int N_threads = 4;          // threads per process
     string tmp_file_folder = "./tmp/";
     string log_file_folder = "./log/";
     vector<string> read_files;
     vector<string> local_read_files;
+    
+    T_read_cnt Batch_read_loading = 2000;
+    size_t Buffer_fread_size_MB = 20;
 
     void ArgParser(int argc, char* argvs[]);
 } PAR;

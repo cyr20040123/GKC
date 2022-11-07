@@ -2,6 +2,10 @@
 ## Hardware Settings
 ### **CPU:** AMD Ryzen 7 5800H
  - 8-core CPU was set to 90% in Windows at 2.85GHz
+ ```bash
+ # Limit CPU usage:
+ cpulimit -e test -l 800
+ ```
 ### **GPU:** Nvidia Geforce RTX 3060 Laptop
  - Tensor Core
  - around 70 watts at 1400MHz
@@ -19,6 +23,9 @@ nvidia-smi -rgc             # Resets the Gpu clocks to the default values.
 
 ## _
 ## Baselines
+138749517
+136695098
+135435562
 ### Datasets
 | Dataset   | Format    | File Size | Bases     | Reads     |K-mers    |
 | ----      | ----      | ----      | ----      | ----      | ----      |
@@ -33,6 +40,7 @@ time kmc -k28 -r -t4 -ci1 -w /home/cyr/downloads/pacbio_filtered.fastq NA.res /h
 e/cyr/downloads/
 ```
 #### **Result**
+
 | Dataset   | Thread| RAM (GB)  | Time (sec)    |
 | ----      | ----  | ----      | ----          |
 | *Ecoli q* | 2     | 1.25      | 9.20 = 4.02 + 5.08|
@@ -42,7 +50,8 @@ e/cyr/downloads/
 |           | 4     | 13.50     | 37.8 = 14.4 + 23.3|
 |           | 8     | 13.50     | 24.3 = 7.9 + 16.4|
 
-*(limiting CPU usage won't affect its time performance)*
+- *limiting CPU usage won't affect its time performance*
+- *mnt in WSL will affect 10%~20% 1st-stage time*
 
 
 

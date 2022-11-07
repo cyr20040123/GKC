@@ -36,6 +36,7 @@ void calVarStdev(vector<size_t> &vecNums) // calc avg max min var std cv (Coeffi
 }
 
 // ==== count skm sizes ====
+/*
 void process_reads_v2 (vector<ReadPtr> &reads, CUDAParams gpars, atomic<size_t> skm_part_sizes[]) {
     
     sort(reads.begin(), reads.end(), sort_comp); // TODO: remove and compare
@@ -68,7 +69,7 @@ void skm_part_size_v2 (CUDAParams gpars) {
     calVarStdev(part_sizes);
     logger->logvec(part_sizes, "Partition Sizes:");
     return;
-}
+}*/
 
 // ==== gen skm and count ====
 void process_reads_count(vector<ReadPtr> &reads, CUDAParams gpars, vector<SKMStore*> &skm_part_vec) {
@@ -98,7 +99,7 @@ void gen_skm_and_count(CUDAParams gpars) {
     
     ReadLoader::work_while_loading(
         [gpars, &skm_part_vec](vector<ReadPtr> &reads){process_reads_count(reads, gpars, skm_part_vec);},
-        4, PAR.read_files[0], 8000, true, 24*ReadLoader::MB
+        PAR.N_threads, PAR.read_files[0], PAR.Batch_read_loading, false, PAR.Buffer_fread_size_MB*ReadLoader::MB
     );
     
     double p1_time = wct1.stop();
@@ -118,15 +119,15 @@ void gen_skm_and_count(CUDAParams gpars) {
     logger->log("**** Phase 2: Superkmer extraction and kmer counting ****", Logger::LV_NOTICE);
     WallClockTimer wct2;
     
-    int n_threads = 4;
+    int n_threads = PAR.N_threads;
     
     vector<T_kmc> kmc_result[PAR.SKM_partitions];
     
     future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
     size_t distinct_kmer_cnt_tot = 0;
-    
+    logger->log("(with "+to_string(n_threads)+" threads)");
     for (i=0, tid=0; i < PAR.SKM_partitions; i++, tid=(tid+1)%n_threads) {
-        cerr<<"  [T"<<tid<<"] "<<i;
+        cerr<<" T"<<tid<<"_"<<i;
         if (distinct_kmer_cnt[tid].valid())
             distinct_kmer_cnt_tot += distinct_kmer_cnt[tid].get();
         distinct_kmer_cnt[tid] = std::async(
@@ -166,7 +167,7 @@ int main (int argc, char** argvs) {
 
     CUDAParams gpars;
     gpars.device_id = 0;
-    gpars.n_streams = 4;
+    gpars.n_streams = min(PAR.N_threads, 8);
     gpars.NUM_BLOCKS_PER_GRID = 16;
     gpars.NUM_THREADS_PER_BLOCK = 512;
 
