@@ -10,6 +10,7 @@
 #include "superkmers.hpp"
 #include "gkc_cuda.hpp"
 #include "kmer_counting.hpp"
+#include "thread_pool.hpp"
 using namespace std;
 
 Logger *logger;
@@ -152,9 +153,74 @@ void gen_skm_and_count(CUDAParams gpars) {
     for (i=0; i<PAR.SKM_partitions; i++) delete skm_part_vec[i];//
     return;
 }
+void gen_skm_and_count_with_TP(CUDAParams gpars) {
+    GPUReset(gpars.device_id); // must before not after pinned memory allocation
+
+    vector<SKMStore*> skm_part_vec;
+    int i, tid;
+    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStore());//
+    
+    // 1st phase: loading and generate superkmers
+    logger->log("**** Phase 1: Loading and generate superkmers ****", Logger::LV_NOTICE);
+    WallClockTimer wct1;
+    
+    ReadLoader::work_while_loading_V2(
+        [gpars, &skm_part_vec](vector<ReadPtr> &reads){process_reads_count(reads, gpars, skm_part_vec);},
+        PAR.N_threads, PAR.read_files[0], PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
+    );
+    
+    double p1_time = wct1.stop();
+    logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);
+    logger->log("     Phase 1 Time: " + to_string(p1_time) + " sec", Logger::LV_INFO);
+
+    size_t skm_tot_len = 0;
+    for(i=0; i<PAR.SKM_partitions; i++) {
+        skm_tot_len += skm_part_vec[i]->tot_size;
+    }
+    logger->log("SKM TOT LEN = " + to_string(skm_tot_len));
+
+    // cout<<"Countinue? ..."; char tmp; cin>>tmp;
+    // GPUReset(gpars.device_id);
+
+    // 2nd phase: superkmer extraction and kmer counting
+    logger->log("**** Phase 2: Superkmer extraction and kmer counting ****", Logger::LV_NOTICE);
+    logger->log("(with "+to_string(PAR.N_threads)+" threads)");
+    
+    WallClockTimer wct2;
+    int n_threads = PAR.N_threads;
+    ThreadPool<size_t> tp(n_threads);
+    
+    vector<T_kmc> kmc_result[PAR.SKM_partitions];
+    future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
+
+    for (i=0; i<PAR.SKM_partitions; i++) {
+        distinct_kmer_cnt[i] = tp.commit_task([&skm_part_vec, &gpars, &kmc_result, i] () {
+            return kmc_counting_GPU (PAR.K_kmer, *(skm_part_vec[i]), gpars.device_id, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i]);
+        });
+    }
+    tp.finish();
+
+    size_t distinct_kmer_cnt_tot = 0;
+    for (i=0; i<PAR.SKM_partitions; i++) {
+        if (distinct_kmer_cnt[i].valid()) {
+            distinct_kmer_cnt_tot += distinct_kmer_cnt[i].get();
+        }
+    }
+    cerr<<endl;
+    
+    logger->log("Total number of distinct kmers: "+to_string(distinct_kmer_cnt_tot));
+    
+    double p2_time = wct2.stop();
+    logger->log("**** Kmer counting finished (Phase 2 ends) ****", Logger::LV_NOTICE);
+    logger->log("     Phase 2 Time: " + to_string(p2_time) + " sec", Logger::LV_INFO);
+
+    for (i=0; i<PAR.SKM_partitions; i++) delete skm_part_vec[i];//
+    return;
+}
 
 int main (int argc, char** argvs) {
-    Logger _logger(0, Logger::LV_DEBUG, true, "./log/");
+    cerr<<"================ PROGRAM BEGINS ================"<<endl;
+    Logger _logger(0, Logger::LV_DEBUG, false, "./log/");
     logger = &_logger;
     PAR.ArgParser(argc, argvs);
     // ReadLoader rl(4, PAR.read_files[0]);
@@ -174,7 +240,12 @@ int main (int argc, char** argvs) {
     // test_skm_part_size(gpars);
     // test_skm_part_size_async(gpars);
     // skm_part_size_v2(gpars);
-    gen_skm_and_count(gpars);
+    
+    WallClockTimer wct_oa;
+    // gen_skm_and_count(gpars);
+    cerr<<"----------------------------------------------"<<endl;
+    gen_skm_and_count_with_TP(gpars);
     cerr<<"================ PROGRAM ENDS ================"<<endl;
+    cout<<wct_oa.stop()<<endl;
     return 0;
 }

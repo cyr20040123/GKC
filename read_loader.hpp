@@ -13,6 +13,7 @@
 #include <atomic>
 #include <sys/stat.h>   // for getting file size
 #include "types.h"
+#include "thread_pool.hpp"
 #ifdef DEBUG
 #include <cassert>
 #endif
@@ -410,8 +411,8 @@ public:
         
         T_read_cnt n_read_loaded = 0, reads_loaded;
         bool loading_not_finished = true;
+        future_status status;
         while (loading_not_finished) {
-            future_status status;
             status = file_loading_res.wait_for(1ms); // TODO: set smaller when storage is fast
             switch (status) {
                 case future_status::deferred:
@@ -436,6 +437,54 @@ public:
                     break;
             }
         }
+        cerr<<"Total reads loaded: "<<n_read_loaded<<endl;
+        return;
+    }
+
+    static void work_while_loading_V2 (std::function<void(vector<ReadPtr>&)> work_func, int loader_threads, string filename, 
+        T_read_cnt batch_size=5000, bool delete_after_proc=false, size_t buffer_size = 20 * ReadLoader::MB)
+    {
+        ThreadPool<void> tp(PAR.N_threads);
+
+        vector<ReadPtr> *reads;
+        ReadLoader rl(loader_threads, filename, batch_size, buffer_size);
+        future<void> file_loading_res = async(std::launch::async, [&rl](){return rl.load_file();});
+        
+        T_read_cnt n_read_loaded = 0, reads_loaded;
+        bool loading_not_finished = true;
+        future_status status;
+        while (loading_not_finished) {
+            status = file_loading_res.wait_for(1ms); // TODO: set smaller when storage is fast
+            switch (status) {
+                case future_status::deferred:
+                case future_status::timeout:
+                    if (rl.get_read_cnt() - n_read_loaded >= batch_size) {
+                        reads = new vector<ReadPtr>();//
+                        reads_loaded = rl.get_reads(*reads, n_read_loaded, batch_size);
+                        // ... process reads
+                        tp.commit_task([reads, &work_func, delete_after_proc, &rl, n_read_loaded, reads_loaded](){
+                            work_func(*reads); delete reads;//
+                            if (delete_after_proc) assert(!rl.delete_read_buffers(n_read_loaded, reads_loaded));
+                        });
+                        // if (delete_after_proc) assert(!rl.delete_read_buffers(n_read_loaded, reads_loaded));
+                        n_read_loaded += reads_loaded;
+                    }
+                    break;
+                case future_status::ready:  // all reads are loaded
+                    reads = new vector<ReadPtr>();//
+                    reads_loaded = rl.get_reads(*reads, n_read_loaded, -1);
+                    // ... process reads
+                    tp.commit_task([reads, &work_func, delete_after_proc, &rl, n_read_loaded, reads_loaded](){
+                        work_func(*reads); delete reads;
+                        if (delete_after_proc) assert(!rl.delete_read_buffers(n_read_loaded, reads_loaded));
+                    });
+                    // if (delete_after_proc) rl.delete_read_buffers(n_read_loaded, reads_loaded);
+                    n_read_loaded += reads_loaded;
+                    loading_not_finished = false;
+                    break;
+            }
+        }
+        tp.finish();
         cerr<<"Total reads loaded: "<<n_read_loaded<<endl;
         return;
     }

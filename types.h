@@ -27,7 +27,7 @@ struct ReadPtr {
 typedef unsigned long long T_kmer;
 typedef unsigned long long T_2bitkmer;
 
-typedef unsigned char Byte;
+typedef unsigned char byte;
 
 struct T_h_data {
     _in_ T_read_cnt reads_cnt;

@@ -1,4 +1,7 @@
 # Developer Handbook
+## TODO
+### DEBUG
+ - cudaHostAlloc fails because of limited resource.
 ## Hardware Settings
 ### **CPU:** AMD Ryzen 7 5800H
  - 8-core CPU was set to 90% in Windows at 2.85GHz
@@ -10,11 +13,12 @@
  - Tensor Core
  - around 70 watts at 1400MHz
 ```bash
-nvidia-smi -pm 1            # enable persistance mode
+nvidia-smi -pm 1            # enable persistance mode (via WSL2)
 # nvidia-smi -pl 125        # set power limit to 125W
-nvidia-smi -lgc 1400,1400   # lock the gpu clock
+nvidia-smi -lgc 1400,1400   # lock the gpu clock (via Windows)
 nvidia-smi -rgc             # Resets the Gpu clocks to the default values.
 ```
+
 ### Free Linux Memory Buffer/Cache
  - To ensure a cold start every time
  ```bash
@@ -31,6 +35,18 @@ nvidia-smi -rgc             # Resets the Gpu clocks to the default values.
 | ----      | ----      | ----      | ----      | ----      | ----      |
 | Ecoli     | Fastq     | 266 MB    | ?         | 16890     | 135435562 |
 | SRR8858432| Fasta     | 1.66 GB   | ?         | 138688    | 1148781224|
+
+### 0. GKC
+#### **Result**
+
+| Dataset   | Thread| RAM (GB)  | Time (sec)    |
+| ----      | ----  | ----      | ----          |
+| *Ecoli q* | 2     |           | 6.90 = 1.70 + 3.85|
+|           | 4     | 1.89      | 5.60 = 1.30 + 2.75|
+|           | 8     |           | 4.80 = 1.45 + 2.45|
+| *8858432* | 2     | 11.10     | 77.9 = 18.9 + 49.2|
+|           | 4     | 12.11     | 56.6 = 12.8 + 34.6|
+|           | 6     | 15.56     | 47.8 = 11.8 + 25.7|
 
 ### 1. KMC3
 #### **Command**

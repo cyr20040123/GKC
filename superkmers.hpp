@@ -50,19 +50,19 @@ static char bit2char[4] = {'A', 'C', 'G', 'T'};
 template<typename T_len, typename T_attr=bool>
 class CRead {
 public:
-    unique_ptr<char[]> compressed_read;
+    unique_ptr<byte[]> compressed_read;
     T_len len = 0;
     T_attr attr;
     CRead() {}
-    CRead(T_len _len, const char* _compressed, T_attr _attr=NULL) {
+    CRead(T_len _len, const byte* _compressed, T_attr _attr=NULL) {
         len = _len;
-        compressed_read = make_unique<char[]>(compressed_length(len));//
+        compressed_read = make_unique<byte[]>(compressed_length(len));//
         memcpy(compressed_read.get(), _compressed, compressed_length(len));
         attr = _attr;
     }
     CRead(const char* raw_read, int _len=-1, T_attr _attr=NULL) {
         len = _len==-1 ? strlen(raw_read) : _len;
-        compressed_read = make_unique<char[]>(compressed_length(len));//
+        compressed_read = make_unique<byte[]>(compressed_length(len));//
         for (int i=0; i<len; i++) {
             compressed_read[i/4] = (compressed_read[i/4] << 2) | (basemap[raw_read[i]] & 0b11);
         }
@@ -74,12 +74,12 @@ public:
 
     CRead &operator=(const CRead &other) {
         if (this == &other) return *this;
-        char* tmp = compressed_read.release();
+        byte* tmp = compressed_read.release();
         if (tmp!=nullptr) delete [] tmp;
 
         // CRead(other); :
         len = other.len;
-        compressed_read = make_unique<char[]>(compressed_length(len));
+        compressed_read = make_unique<byte[]>(compressed_length(len));
         memcpy(compressed_read.get(), other.compressed_read.get(), compressed_length(len));
         attr = other.attr;
         
@@ -112,6 +112,20 @@ public:
         }
         return res;
     }
+    T_kmer get_2bit_kmer_V2(int beg, int k, T_kmer kmer_mask) {
+        T_kmer res = 0;
+        int i;
+        // beg = 3 k = 16 (3~19)
+        // fetch 0~8
+        // fetch 8~16
+        for (i = beg; i <= beg+k-4; i += 4) {
+            res = (res << 8) | compressed_read[i/4];
+        }
+        for (i = (i>>2)<<2; i < beg+k; i++) {
+            res = (res << 2) | this->get_2bit(i);
+        }
+        return res & kmer_mask;
+    }
     // const char* serialize(_out_ T_len &slen) {
     //     slen = compressed_length(len);
     //     return compressed_read.get();
@@ -140,6 +154,9 @@ public:
     }
     bool try_pop_skm (CRead<T_skm_len> &skm) {
         return skms.try_dequeue(skm);
+    }
+    size_t try_pop_skm_bulk (CRead<T_skm_len> *skm_arr, size_t cnt) {
+        return skms.try_dequeue_bulk(skm_arr, cnt);
     }
     // T_kmer* extract_kmers (T_kvalue k) {
     //     size_t n_skms = skms.size_approx(); // only call synchronously after skm generation finished
