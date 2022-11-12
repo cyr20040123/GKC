@@ -95,7 +95,7 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
     const size_t BULK_SIZE = 10000; // 100k too large
     CRead<T_skm_len> skm_bulk[BULK_SIZE];
     size_t pop_cnt;
-    pop_cnt = skms_store.try_pop_skm_bulk(skm_bulk, BULK_SIZE);
+    pop_cnt = skms_store.try_pop_skm_bulk(skm_bulk, BULK_SIZE); // 45%
     while (pop_cnt) {
         for (size_t i=0; i<pop_cnt; i++) {
             skm_len = skm_bulk[i].length();
@@ -119,6 +119,8 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
     // 1. convert to canonical kmers (~3-8% time)
     #ifdef TIMER
     wcts[0] = wct0.stop();
+    // cerr<<wcts[0]<<endl;
+    // exit(1);
     WallClockTimer wct1;
     #endif
     thrust::constant_iterator<T_kvalue> ik(k);
@@ -192,6 +194,7 @@ __host__ size_t kmc_counting_GPU (T_kvalue k,
     cout<<wcts[0]<<"\t"<<wcts[1]<<"\t"<<wcts[2]<<"\t"<<wcts[3]<<"\t"<<wcts[4]<<"\t"<<wcts[5]<<"\t"<<wcts[6]<<endl;
     #endif
     // return total_kmer_cnt; // total kmer
+    delete &skms_store;
     return idx_h.size()-1; // total distinct kmer
 }
 

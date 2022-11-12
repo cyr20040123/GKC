@@ -87,72 +87,72 @@ void process_reads_count(vector<ReadPtr> &reads, CUDAParams gpars, vector<SKMSto
     };
     GenSuperkmerGPU (pinned_reads, PAR.K_kmer, PAR.P_minimizer, false, gpars, CountTask::SKMPartition, PAR.SKM_partitions, process_func);
 }
-void gen_skm_and_count(CUDAParams gpars) {
-    GPUReset(gpars.device_id); // must before not after pinned memory allocation
+// void gen_skm_and_count(CUDAParams gpars) {
+//     GPUReset(gpars.device_id); // must before not after pinned memory allocation
 
-    vector<SKMStore*> skm_part_vec;
-    int i, tid;
-    for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStore());//
+//     vector<SKMStore*> skm_part_vec;
+//     int i, tid;
+//     for (i=0; i<PAR.SKM_partitions; i++) skm_part_vec.push_back(new SKMStore());//
     
-    // 1st phase: loading and generate superkmers
-    logger->log("**** Phase 1: Loading and generate superkmers ****", Logger::LV_NOTICE);
-    WallClockTimer wct1;
+//     // 1st phase: loading and generate superkmers
+//     logger->log("**** Phase 1: Loading and generate superkmers ****", Logger::LV_NOTICE);
+//     WallClockTimer wct1;
     
-    ReadLoader::work_while_loading(
-        [gpars, &skm_part_vec](vector<ReadPtr> &reads){process_reads_count(reads, gpars, skm_part_vec);},
-        PAR.N_threads, PAR.read_files[0], PAR.Batch_read_loading, false, PAR.Buffer_fread_size_MB*ReadLoader::MB
-    );
+//     ReadLoader::work_while_loading(
+//         [gpars, &skm_part_vec](vector<ReadPtr> &reads){process_reads_count(reads, gpars, skm_part_vec);},
+//         PAR.N_threads, PAR.read_files[0], PAR.Batch_read_loading, false, PAR.Buffer_fread_size_MB*ReadLoader::MB
+//     );
     
-    double p1_time = wct1.stop();
-    logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);
-    logger->log("     Phase 1 Time: " + to_string(p1_time) + " sec", Logger::LV_INFO);
+//     double p1_time = wct1.stop();
+//     logger->log("**** All reads loaded and SKMs generated (Phase 1 ends) ****", Logger::LV_NOTICE);
+//     logger->log("     Phase 1 Time: " + to_string(p1_time) + " sec", Logger::LV_INFO);
 
-    size_t skm_tot_len = 0;
-    for(i=0; i<PAR.SKM_partitions; i++) {
-        skm_tot_len += skm_part_vec[i]->tot_size;
-    }
-    logger->log("SKM TOT LEN = " + to_string(skm_tot_len));
+//     size_t skm_tot_len = 0;
+//     for(i=0; i<PAR.SKM_partitions; i++) {
+//         skm_tot_len += skm_part_vec[i]->tot_size;
+//     }
+//     logger->log("SKM TOT LEN = " + to_string(skm_tot_len));
 
-    // cout<<"Countinue? ..."; char tmp; cin>>tmp;
-    GPUReset(gpars.device_id);
+//     // cout<<"Countinue? ..."; char tmp; cin>>tmp;
+//     GPUReset(gpars.device_id);
 
-    // 2nd phase: superkmer extraction and kmer counting
-    logger->log("**** Phase 2: Superkmer extraction and kmer counting ****", Logger::LV_NOTICE);
-    WallClockTimer wct2;
+//     // 2nd phase: superkmer extraction and kmer counting
+//     logger->log("**** Phase 2: Superkmer extraction and kmer counting ****", Logger::LV_NOTICE);
+//     WallClockTimer wct2;
     
-    int n_threads = PAR.N_threads;
+//     int n_threads = PAR.N_threads;
     
-    vector<T_kmc> kmc_result[PAR.SKM_partitions];
+//     vector<T_kmc> kmc_result[PAR.SKM_partitions];
     
-    future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
-    size_t distinct_kmer_cnt_tot = 0;
-    logger->log("(with "+to_string(n_threads)+" threads)");
-    for (i=0, tid=0; i < PAR.SKM_partitions; i++, tid=(tid+1)%n_threads) {
-        cerr<<" T"<<tid<<"_"<<i;
-        if (distinct_kmer_cnt[tid].valid())
-            distinct_kmer_cnt_tot += distinct_kmer_cnt[tid].get();
-        distinct_kmer_cnt[tid] = std::async(
-            std::launch::async, 
-            [&skm_part_vec, &gpars, &kmc_result, i] () {
-                return kmc_counting_GPU (PAR.K_kmer, *(skm_part_vec[i]), gpars.device_id, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i]);
-            }
-        );
-    }
-    cerr<<endl;
-    for (tid=0; tid<n_threads; tid++) {
-        if (distinct_kmer_cnt[tid].valid()) {
-            distinct_kmer_cnt_tot += distinct_kmer_cnt[tid].get();
-        }
-    }
-    logger->log("Total number of distinct kmers: "+to_string(distinct_kmer_cnt_tot));
+//     future<size_t> distinct_kmer_cnt[PAR.SKM_partitions];
+//     size_t distinct_kmer_cnt_tot = 0;
+//     logger->log("(with "+to_string(n_threads)+" threads)");
+//     for (i=0, tid=0; i < PAR.SKM_partitions; i++, tid=(tid+1)%n_threads) {
+//         cerr<<" T"<<tid<<"_"<<i;
+//         if (distinct_kmer_cnt[tid].valid())
+//             distinct_kmer_cnt_tot += distinct_kmer_cnt[tid].get();
+//         distinct_kmer_cnt[tid] = std::async(
+//             std::launch::async, 
+//             [&skm_part_vec, &gpars, &kmc_result, i] () {
+//                 return kmc_counting_GPU (PAR.K_kmer, *(skm_part_vec[i]), gpars.device_id, PAR.kmer_min_freq, PAR.kmer_max_freq, kmc_result[i]);
+//             }
+//         );
+//     }
+//     cerr<<endl;
+//     for (tid=0; tid<n_threads; tid++) {
+//         if (distinct_kmer_cnt[tid].valid()) {
+//             distinct_kmer_cnt_tot += distinct_kmer_cnt[tid].get();
+//         }
+//     }
+//     logger->log("Total number of distinct kmers: "+to_string(distinct_kmer_cnt_tot));
     
-    double p2_time = wct2.stop();
-    logger->log("**** Kmer counting finished (Phase 2 ends) ****", Logger::LV_NOTICE);
-    logger->log("     Phase 2 Time: " + to_string(p2_time) + " sec", Logger::LV_INFO);
+//     double p2_time = wct2.stop();
+//     logger->log("**** Kmer counting finished (Phase 2 ends) ****", Logger::LV_NOTICE);
+//     logger->log("     Phase 2 Time: " + to_string(p2_time) + " sec", Logger::LV_INFO);
 
-    for (i=0; i<PAR.SKM_partitions; i++) delete skm_part_vec[i];//
-    return;
-}
+//     for (i=0; i<PAR.SKM_partitions; i++) delete skm_part_vec[i];//
+//     return;
+// }
 void gen_skm_and_count_with_TP(CUDAParams gpars) {
     GPUReset(gpars.device_id); // must before not after pinned memory allocation
 
@@ -166,7 +166,7 @@ void gen_skm_and_count_with_TP(CUDAParams gpars) {
     
     ReadLoader::work_while_loading_V2(
         [gpars, &skm_part_vec](vector<ReadPtr> &reads){process_reads_count(reads, gpars, skm_part_vec);},
-        PAR.N_threads, PAR.read_files[0], PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
+        2, PAR.read_files[0], PAR.Batch_read_loading, true, PAR.Buffer_fread_size_MB*ReadLoader::MB
     );
     
     double p1_time = wct1.stop();
@@ -214,7 +214,7 @@ void gen_skm_and_count_with_TP(CUDAParams gpars) {
     logger->log("**** Kmer counting finished (Phase 2 ends) ****", Logger::LV_NOTICE);
     logger->log("     Phase 2 Time: " + to_string(p2_time) + " sec", Logger::LV_INFO);
 
-    for (i=0; i<PAR.SKM_partitions; i++) delete skm_part_vec[i];//
+    // for (i=0; i<PAR.SKM_partitions; i++) delete skm_part_vec[i];// deleted in kmc_counting_GPU
     return;
 }
 
@@ -233,9 +233,9 @@ int main (int argc, char** argvs) {
 
     CUDAParams gpars;
     gpars.device_id = 0;
-    gpars.n_streams = min(PAR.N_threads, 8);
-    gpars.NUM_BLOCKS_PER_GRID = 16;
-    gpars.NUM_THREADS_PER_BLOCK = 512;
+    gpars.n_streams = 6;
+    gpars.NUM_BLOCKS_PER_GRID = 8;
+    gpars.NUM_THREADS_PER_BLOCK = 256;
 
     // test_skm_part_size(gpars);
     // test_skm_part_size_async(gpars);

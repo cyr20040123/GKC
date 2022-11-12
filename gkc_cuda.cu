@@ -506,11 +506,11 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             CUDA_CHECK(cudaFreeAsync(gpu_data[i].d_superkmer_offs, streams[i]));
             
             // -- Wait for CUDA --
-            CUDA_CHECK(cudaStreamSynchronize(streams[i])); // move this into async post_proc_func
+            /// - CUDA_CHECK(cudaStreamSynchronize(streams[i])); // move this into async post_proc_func
             // logger->log("GPU Done"+to_string(i));
             
             // -- CPU post-process --
-            fu_stream_postproc[i] = async(launch::async, process_func, host_data[i]);
+            /// - fu_stream_postproc[i] = async(launch::async, process_func, host_data[i]);
             // process_func(host_data[i]);
             // CalcSKMPartSize_instream(host_data[i].reads_cnt, host_data[i].superkmer_offs, host_data[i].reads_offs, host_data[i].minimizers, SKM_partitions, K_kmer, skm_part_sizes);
             
@@ -524,7 +524,11 @@ __host__ void GenSuperkmerGPU (PinnedCSR &pinned_reads,
             // delete [] host_data[i].superkmer_offs;
         }
         for (i = 0; i < started_streams; i++) {
-            fu_stream_postproc[i].get();
+            CUDA_CHECK(cudaStreamSynchronize(streams[i])); // move this into async post_proc_func
+            // fu_stream_postproc[i] = async(launch::async, process_func, host_data[i]);
+            process_func(host_data[i]);
+            
+            // fu_stream_postproc[i].get();
             if (HPC) {
                 delete [] host_data[i].hpc_orig_pos;
                 delete [] host_data[i].read_len;

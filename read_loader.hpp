@@ -209,7 +209,7 @@ public:
     
     T_read_cnt read_cnt = 0;
     T_read_cnt reads_consumed = 0;
-    T_read_cnt batch_size = 8000;
+    T_read_cnt batch_size = 2000;
 
     ReadLoader (int n_threads, string filename, T_read_cnt batch_size = 8000, size_t buffer_size = 20*MB) {
         size_t file_size = get_file_size(filename.c_str());
@@ -217,7 +217,7 @@ public:
         int i;
         this->_n_threads = n_threads;
         this->batch_size = batch_size;
-        _proc_res = new future<int> [n_threads];//
+        _proc_res = new future<T_read_cnt> [n_threads];//
         _buf_cur = new char* [n_threads];//
         _buf_prev_remain = new string [n_threads];//
         _pbuf_mtxs = new mutex [n_threads] ();//
@@ -448,8 +448,11 @@ public:
 
         vector<ReadPtr> *reads;
         ReadLoader rl(loader_threads, filename, batch_size, buffer_size);
+        // promise<void> file_loading_prom;
+        // thread file_loading_t([&rl, &file_loading_prom](){return rl.load_file_V2(file_loading_prom);});
         future<void> file_loading_res = async(std::launch::async, [&rl](){return rl.load_file();});
-        
+        // future<void> file_loading_res = file_loading_prom.get_future();
+
         T_read_cnt n_read_loaded = 0, reads_loaded;
         bool loading_not_finished = true;
         future_status status;
@@ -484,6 +487,7 @@ public:
                     break;
             }
         }
+        // if (file_loading_t.joinable()) file_loading_t.join();
         tp.finish();
         cerr<<"Total reads loaded: "<<n_read_loaded<<endl;
         return;

@@ -20,6 +20,10 @@ private:
     
     mutex _wake_mtx;
     condition_variable _wake_cv;
+
+    // condition_variable _waiter_cv;
+    // mutex _waiter_mtx;
+    // atomic_flag _in_waiting;
     
     mutex _queue_mtx; // for locking two queues below
     
@@ -109,6 +113,11 @@ public:
         _wake_cv.notify_all();
         for (auto &t: _threads) t.join();
     }
+    // void wait () {
+    //     _in_waiting.test_and_set();
+    //     unique_lock<mutex> tmp_lck(_waiter_mtx);
+    //     _waiter_cv.wait(tmp_lck, [&](){return _task_queue_empty==true});
+    // }
 };
 
 /* an example: g++ -std=c++11 thread_pool.cpp -o test -lpthread -g
