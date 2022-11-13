@@ -371,6 +371,32 @@ public:
         #endif
         return n-beg; // returns the number of loaded reads
     }
+    T_read_cnt get_reads_V2(vector<ReadPtr> &reads, T_read_cnt beg=0, T_read_cnt max_n=-1) {
+        T_read_cnt n = 0;
+        int bat, i, j;
+        bool loop_flag = true;
+        int thread_batch_size;
+        _lock_thread_reads();
+        if (max_n == -1) max_n = read_cnt;
+        for (bat=1; loop_flag; bat++) {
+            for (i=0; i<_n_threads; i++) {
+                if (bat >= _thread_bat_split_pos[i].size()) {loop_flag = false; break;}
+                thread_batch_size = _thread_bat_split_pos[i][bat] - _thread_bat_split_pos[i][bat-1];
+                if (n >= beg) { // add reads
+                    if (n+thread_batch_size-beg > max_n && !reads.empty()) {loop_flag = false; break;}
+                    for (j=_thread_bat_split_pos[i][bat-1]; j<_thread_bat_split_pos[i][bat]; j++) {
+                        assert(_thread_reads[i][j] != nullptr);
+                        reads.push_back({_thread_reads[i][j]->c_str(), T_read_len(_thread_reads[i][j]->length())});
+                    }
+                }
+                n += thread_batch_size;
+                // cerr<<"load tid="<<i<<" pos="<<_thread_bat_split_pos[i][bat-1]<<"~"<<_thread_bat_split_pos[i][bat]<<endl;
+            }
+        }
+        reads_consumed += n-beg;
+        _unlock_thread_reads();
+        return n-beg; // returns the number of loaded reads
+    }
     /// @brief Delete reads in the thread buffers.
     /// @param beg The beginning index of read to be deleted.
     /// @param n The number of reads to be deleted (from beg).
@@ -463,7 +489,7 @@ public:
                 case future_status::timeout:
                     if (rl.get_read_cnt() - n_read_loaded >= batch_size) {
                         reads = new vector<ReadPtr>();//
-                        reads_loaded = rl.get_reads(*reads, n_read_loaded, batch_size);
+                        reads_loaded = rl.get_reads_V2(*reads, n_read_loaded, batch_size);
                         // ... process reads
                         tp.commit_task([reads, &work_func, delete_after_proc, &rl, n_read_loaded, reads_loaded](){
                             work_func(*reads); delete reads;//
@@ -475,7 +501,7 @@ public:
                     break;
                 case future_status::ready:  // all reads are loaded
                     reads = new vector<ReadPtr>();//
-                    reads_loaded = rl.get_reads(*reads, n_read_loaded, -1);
+                    reads_loaded = rl.get_reads_V2(*reads, n_read_loaded, -1);
                     // ... process reads
                     tp.commit_task([reads, &work_func, delete_after_proc, &rl, n_read_loaded, reads_loaded](){
                         work_func(*reads); delete reads;
